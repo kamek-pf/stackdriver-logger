@@ -84,10 +84,13 @@ fn try_init() -> Result<(), SetLoggerError> {
         pretty_env_logger::init();
         Ok(())
     } else {
-        let service_name = env::var("CARGO_PKG_NAME")
-            .expect("Missing Cargo env variable CARGO_PKG_NAME");
-        let service_version = env::var("CARGO_PKG_VERSION")
-            .expect("Missing Cargo env variable CARGO_PKG_VERSION");
+        let service_name = env::var("SERVICE_NAME")
+            .or(env::var("CARGO_PKG_NAME"))
+            .unwrap_or("".to_owned());
+
+        let service_version = env::var("SERVICE_VERSION")
+            .or(env::var("CARGO_PKG_VERSION"))
+            .unwrap_or("".to_owned());
 
         let logger = StackdriverLogger {
             service_name,
