@@ -1,23 +1,40 @@
 extern crate log;
-extern crate serde;
 extern crate chrono;
 extern crate pretty_env_logger;
 
 #[macro_use]
 extern crate serde_json;
 
-#[macro_use]
-extern crate serde_derive;
+use std::fmt;
+use std::env;
 
 use log::{Level, Log, Metadata, Record, SetLoggerError, STATIC_MAX_LEVEL};
 use serde_json::Value;
 use chrono::Utc;
 
-pub struct StackdriverLogger;
-static LOGGER: StackdriverLogger = StackdriverLogger;
+struct StackdriverLogger {
+    service_name: String,
+    service_version: String,
+}
 
-const SVC_NAME: &str = env!("CARGO_PKG_NAME");
-const SVC_VERSION: &str = env!("CARGO_PKG_VERSION");
+impl StackdriverLogger {
+    fn format_record(&self, record: &Record) -> Value {
+        json!({
+            "eventTime": Utc::now().to_rfc3339(),
+            "serviceContext": {
+                "service": self.service_name,
+                "version": self.service_version
+            },
+            "message": format!("{}", record.args()),
+            "severity": map_level(&record.level()).to_string(),
+            "reportLocation": {
+                "filePath": record.file(),
+                "lineNumber": record.line(),
+                "modulePath": record.module_path()
+            }
+        })
+    }
+}
 
 impl Log for StackdriverLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
@@ -26,7 +43,7 @@ impl Log for StackdriverLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let formatted = format_record(record);
+            let formatted = self.format_record(record);
             println!("{}", formatted);
         }
     }
@@ -35,7 +52,7 @@ impl Log for StackdriverLogger {
 }
 
 /// Log levels available in Stackdriver
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub enum StackdriverLogLevel {
     Debug,
     Info,
@@ -47,13 +64,38 @@ pub enum StackdriverLogLevel {
     Emergency,
 }
 
+impl fmt::Display for StackdriverLogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StackdriverLogLevel::Debug => write!(f, "DEBUG"),
+            StackdriverLogLevel::Info => write!(f, "INFO"),
+            StackdriverLogLevel::Notice => write!(f, "NOTICE"),
+            StackdriverLogLevel::Warning => write!(f, "WARNING"),
+            StackdriverLogLevel::Error => write!(f, "ERROR"),
+            StackdriverLogLevel::Critical => write!(f, "CRITICAL"),
+            StackdriverLogLevel::Alert => write!(f, "ALERT"),
+            StackdriverLogLevel::Emergency => write!(f, "EMERGENCY"),
+        }
+    }
+}
+
 fn try_init() -> Result<(), SetLoggerError> {
     if cfg!(debug_assertions) {
         pretty_env_logger::init();
         Ok(())
     } else {
+        let service_name = env::var("CARGO_PKG_NAME")
+            .expect("Missing Cargo env variable CARGO_PKG_NAME");
+        let service_version = env::var("CARGO_PKG_VERSION")
+            .expect("Missing Cargo env variable CARGO_PKG_VERSION");
+
+        let logger = StackdriverLogger {
+            service_name,
+            service_version,
+        };
+
         log::set_max_level(STATIC_MAX_LEVEL);
-        log::set_logger(&LOGGER)
+        log::set_boxed_logger(Box::new(logger))
     }
 }
 
@@ -62,23 +104,6 @@ fn try_init() -> Result<(), SetLoggerError> {
 /// For release build, we're using the json structure expected by Stackdriver.
 pub fn init() {
     try_init().expect("Could not initialize stackdriver_logger");
-}
-
-fn format_record(record: &Record) -> Value {
-    json!({
-        "eventTime": Utc::now().to_rfc3339(),
-        "serviceContext": {
-            "service": SVC_NAME,
-            "version": SVC_VERSION
-        },
-        "message": format!("{}", record.args()),
-        "severity": map_level(&record.level()),
-        "reportLocation": {
-            "filePath": record.file(),
-            "lineNumber": record.line(),
-            "modulePath": record.module_path()
-        }
-    })
 }
 
 fn map_level(input: &Level) -> StackdriverLogLevel {
