@@ -23,9 +23,9 @@ fn main() {
 
 ## Behavior
 You need to provide two environment variables, `SERVICE_NAME` and `SERVICE_VERSION`, everything else
-is handled by the library.
+is handled by the library. \
 We're using Cargo's `CARGP_PKG_NAME` and `CARGO_PKG_VERSION` as a fallback, but these are only available
-if you run your application via Cargo.
+if you run your application via Cargo. \
 `serviceName` and `serviceVersion` are left blank if none of the above are found.
 
 ## License

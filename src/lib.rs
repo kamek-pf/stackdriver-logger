@@ -1,3 +1,5 @@
+// #![doc(include = "../README.md")]
+
 extern crate log;
 extern crate chrono;
 extern crate pretty_env_logger;
