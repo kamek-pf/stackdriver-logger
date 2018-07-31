@@ -46,7 +46,12 @@ impl Log for StackdriverLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let formatted = self.format_record(record);
-            println!("{}", formatted);
+
+            if record.metadata().level() == Level::Error {
+                eprintln!("{}", formatted);
+            } else {
+                println!("{}", formatted);
+            }
         }
     }
 
