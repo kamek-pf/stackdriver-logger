@@ -31,8 +31,11 @@ impl StackdriverLogger {
             "severity": map_level(&record.level()).to_string(),
             "reportLocation": {
                 "filePath": record.file(),
+                "modulePath": record.module_path(),
+                // We need this or errors won't show in Error Reporting
+                // There's currently no way to get the parent function name
+                "functionName": record.module_path(),
                 "lineNumber": record.line(),
-                "modulePath": record.module_path()
             }
         })
     }
