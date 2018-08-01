@@ -17,6 +17,7 @@ use serde_json::Value;
 struct StackdriverLogger {
     service_name: String,
     service_version: String,
+    ignored_paths: Vec<String>,
 }
 
 impl StackdriverLogger {
@@ -50,7 +51,10 @@ impl StackdriverLogger {
 
 impl Log for StackdriverLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= STATIC_MAX_LEVEL
+        let has_level = metadata.level() <= STATIC_MAX_LEVEL;
+        let is_allowed = !self.ignored_paths.iter().any(|e| e == metadata.target());
+
+        has_level && is_allowed
     }
 
     fn log(&self, record: &Record) {
@@ -112,10 +116,24 @@ fn try_init() -> Result<(), SetLoggerError> {
         let logger = StackdriverLogger {
             service_name,
             service_version,
+            ignored_paths: get_ignored_paths(env::var("RUST_LOG_IGNORE").ok()),
         };
 
         log::set_max_level(STATIC_MAX_LEVEL);
         log::set_boxed_logger(Box::new(logger))
+    }
+}
+
+fn get_ignored_paths(paths: Option<String>) -> Vec<String> {
+    match paths {
+        None => vec![],
+        Some(value) => value
+            .split(',')
+            .filter_map(|value| match value {
+                "" => None,
+                other => Some(other.to_owned()),
+            })
+            .collect(),
     }
 }
 
@@ -132,5 +150,44 @@ fn map_level(input: &Level) -> StackdriverLogLevel {
         Level::Warn => StackdriverLogLevel::Warning,
         Level::Info => StackdriverLogLevel::Info,
         Level::Debug | Level::Trace => StackdriverLogLevel::Debug,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ignored_() {
+        let input = None;
+        let paths = get_ignored_paths(input);
+        let expected: Vec<String> = vec![];
+        assert_eq!(paths, expected);
+
+        let input = Some("module".to_owned());
+        let paths = get_ignored_paths(input);
+        assert_eq!(paths, vec!["module"]);
+
+        let input = Some("some::module".to_owned());
+        let paths = get_ignored_paths(input);
+        assert_eq!(paths, vec!["some::module"]);
+
+        let input = Some("some::module,and_another".to_owned());
+        let paths = get_ignored_paths(input);
+        assert_eq!(paths, vec!["some::module", "and_another"]);
+
+        let input = Some("some::module,and_another,plus::something_else,".to_owned());
+        let paths = get_ignored_paths(input);
+        assert_eq!(
+            paths,
+            vec!["some::module", "and_another", "plus::something_else"]
+        );
+
+        let input = Some("some::module,and_another,with::trailing::comma,".to_owned());
+        let paths = get_ignored_paths(input);
+        assert_eq!(
+            paths,
+            vec!["some::module", "and_another", "with::trailing::comma"]
+        );
     }
 }

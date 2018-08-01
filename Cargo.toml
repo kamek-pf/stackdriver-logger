@@ -1,6 +1,6 @@
 [package]
 name = "stackdriver_logger"
-version = "0.2.0"
+version = "0.3.0-beta1"
 description = "A logger for Google's Stackdriver with a cli-friendly fallback for local development"
 authors = ["Kamek <b.kamek@gmail.com>"]
 license = "MIT/Apache-2.0"

@@ -28,6 +28,15 @@ We're using Cargo's `CARGO_PKG_NAME` and `CARGO_PKG_VERSION` as a fallback, but 
 if you run your application via Cargo. \
 `serviceName` and `serviceVersion` are left blank if none of the above are found.
 
+## Ignoring modules
+This library accepts a `RUST_LOG_IGNORE` env variable. \
+It should be a list of comma separated
+module paths you wish to ignore :
+- `RUST_LOG_IGNORE=some_crate::module`
+- `RUST_LOG_IGNORE=some_crate::module,and::something_else`
+
+This features simply compare full matches, so ignoring the root of a crate won't ignore its child modules.
+
 ## License
 Licensed under either of
 
