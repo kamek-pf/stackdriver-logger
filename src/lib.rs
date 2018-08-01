@@ -1,18 +1,18 @@
 // #![doc(include = "../README.md")]
 
-extern crate log;
 extern crate chrono;
+extern crate log;
 extern crate pretty_env_logger;
 
 #[macro_use]
 extern crate serde_json;
 
-use std::fmt;
 use std::env;
+use std::fmt;
 
+use chrono::Utc;
 use log::{Level, Log, Metadata, Record, SetLoggerError, STATIC_MAX_LEVEL};
 use serde_json::Value;
-use chrono::Utc;
 
 struct StackdriverLogger {
     service_name: String,
@@ -21,20 +21,27 @@ struct StackdriverLogger {
 
 impl StackdriverLogger {
     fn format_record(&self, record: &Record) -> Value {
+        let message = match record.level() {
+            Level::Error => format!(
+                "{} \n at {}:{}",
+                record.args(),
+                record.file().unwrap_or("unknown_file"),
+                record.line().unwrap_or(0)
+            ),
+            _ => format!("{}", record.args()),
+        };
+
         json!({
             "eventTime": Utc::now().to_rfc3339(),
             "serviceContext": {
                 "service": self.service_name,
                 "version": self.service_version
             },
-            "message": format!("{}", record.args()),
+            "message": message,
             "severity": map_level(&record.level()).to_string(),
             "reportLocation": {
                 "filePath": record.file(),
                 "modulePath": record.module_path(),
-                // We need this or errors won't show in Error Reporting
-                // There's currently no way to get the parent function name
-                "functionName": record.module_path(),
                 "lineNumber": record.line(),
             }
         })
@@ -50,7 +57,7 @@ impl Log for StackdriverLogger {
         if self.enabled(record.metadata()) {
             let formatted = self.format_record(record);
 
-            if record.metadata().level() == Level::Error {
+            if record.level() == Level::Error {
                 eprintln!("{}", formatted);
             } else {
                 println!("{}", formatted);
