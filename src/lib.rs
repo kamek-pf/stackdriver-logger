@@ -1,76 +1,14 @@
 // #![doc(include = "../README.md")]
 
-extern crate chrono;
-extern crate log;
-extern crate pretty_env_logger;
-
 #[macro_use]
 extern crate serde_json;
 
+use chrono::Utc;
+use env_logger::Builder;
+use log::{Level, Record, SetLoggerError};
+use serde_json::Value;
 use std::env;
 use std::fmt;
-
-use chrono::Utc;
-use log::{Level, Log, Metadata, Record, SetLoggerError, STATIC_MAX_LEVEL};
-use serde_json::Value;
-
-struct StackdriverLogger {
-    service_name: String,
-    service_version: String,
-    ignored_paths: Vec<String>,
-}
-
-impl StackdriverLogger {
-    fn format_record(&self, record: &Record) -> Value {
-        let message = match record.level() {
-            Level::Error => format!(
-                "{} \n at {}:{}",
-                record.args(),
-                record.file().unwrap_or("unknown_file"),
-                record.line().unwrap_or(0)
-            ),
-            _ => format!("{}", record.args()),
-        };
-
-        json!({
-            "eventTime": Utc::now().to_rfc3339(),
-            "serviceContext": {
-                "service": self.service_name,
-                "version": self.service_version
-            },
-            "message": message,
-            "severity": map_level(&record.level()).to_string(),
-            "reportLocation": {
-                "filePath": record.file(),
-                "modulePath": record.module_path(),
-                "lineNumber": record.line(),
-            }
-        })
-    }
-}
-
-impl Log for StackdriverLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        let has_level = metadata.level() <= STATIC_MAX_LEVEL;
-        let is_allowed = !self.ignored_paths.iter().any(|e| e == metadata.target());
-
-        has_level && is_allowed
-    }
-
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            let formatted = self.format_record(record);
-
-            if record.level() == Level::Error {
-                eprintln!("{}", formatted);
-            } else {
-                println!("{}", formatted);
-            }
-        }
-    }
-
-    fn flush(&self) {}
-}
 
 /// Log levels available in Stackdriver
 #[derive(Debug)]
@@ -86,7 +24,7 @@ pub enum StackdriverLogLevel {
 }
 
 impl fmt::Display for StackdriverLogLevel {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StackdriverLogLevel::Debug => write!(f, "DEBUG"),
             StackdriverLogLevel::Info => write!(f, "INFO"),
@@ -100,48 +38,54 @@ impl fmt::Display for StackdriverLogLevel {
     }
 }
 
-fn try_init() -> Result<(), SetLoggerError> {
+fn try_init(service: Option<Service>, report_location: bool) -> Result<(), SetLoggerError> {
     if cfg!(debug_assertions) {
-        pretty_env_logger::init();
-        Ok(())
+        pretty_env_logger::try_init()
     } else {
-        let service_name = env::var("SERVICE_NAME")
-            .or(env::var("CARGO_PKG_NAME"))
-            .unwrap_or("".to_owned());
+        let mut builder = formatted_builder(service, report_location);
 
-        let service_version = env::var("SERVICE_VERSION")
-            .or(env::var("CARGO_PKG_VERSION"))
-            .unwrap_or("".to_owned());
+        if let Ok(s) = ::std::env::var("RUST_LOG") {
+            builder.parse(&s);
+        }
 
-        let logger = StackdriverLogger {
-            service_name,
-            service_version,
-            ignored_paths: get_ignored_paths(env::var("RUST_LOG_IGNORE").ok()),
-        };
-
-        log::set_max_level(STATIC_MAX_LEVEL);
-        log::set_boxed_logger(Box::new(logger))
-    }
-}
-
-fn get_ignored_paths(paths: Option<String>) -> Vec<String> {
-    match paths {
-        None => vec![],
-        Some(value) => value
-            .split(',')
-            .filter_map(|value| match value {
-                "" => None,
-                other => Some(other.to_owned()),
-            })
-            .collect(),
+        builder.try_init()
     }
 }
 
 /// Initialize the logger.
 /// For debug build, this falls back to pretty_env_logger.
-/// For release build, we're using the json structure expected by Stackdriver.
+/// For release build, we're using the json structure expected by Stackdriver (without service and
+/// with report location).
 pub fn init() {
-    try_init().expect("Could not initialize stackdriver_logger");
+    try_init(None, true).expect("Could not initialize stackdriver_logger");
+}
+
+/// Initialize the logger.
+/// For debug build, this falls back to pretty_env_logger.
+/// For release build, we're using the json structure expected by Stackdriver.
+pub fn init_with(service: Option<Service>, report_location: bool) {
+    try_init(service, report_location).expect("Could not initialize stackdriver_logger");
+}
+
+/// Returns a `env_logger::Builder` for further customization.
+///
+/// This method will return a stackdriver JSON formatted `env_logger::Builder`
+/// for further customization. Refer to env_logger::Build crate documentation
+/// for further details and usage.
+pub fn formatted_builder(service: Option<Service>, report_location: bool) -> Builder {
+    use std::io::Write;
+
+    let mut builder = Builder::new();
+
+    builder.format(move |f, record| {
+        writeln!(
+            f,
+            "{}",
+            format_record(record, service.as_ref(), report_location)
+        )
+    });
+
+    builder
 }
 
 fn map_level(input: &Level) -> StackdriverLogLevel {
@@ -153,41 +97,64 @@ fn map_level(input: &Level) -> StackdriverLogLevel {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Clone)]
+pub struct Service {
+    name: String,
+    version: String,
+}
 
-    #[test]
-    fn parse_ignored_() {
-        let input = None;
-        let paths = get_ignored_paths(input);
-        let expected: Vec<String> = vec![];
-        assert_eq!(paths, expected);
+impl Service {
+    pub fn from_env() -> Option<Service> {
+        let name = env::var("SERVICE_NAME")
+            .or(env::var("CARGO_PKG_NAME"))
+            .unwrap_or("".to_owned());
 
-        let input = Some("module".to_owned());
-        let paths = get_ignored_paths(input);
-        assert_eq!(paths, vec!["module"]);
+        let version = env::var("SERVICE_VERSION")
+            .or(env::var("CARGO_PKG_VERSION"))
+            .unwrap_or("".to_owned());
 
-        let input = Some("some::module".to_owned());
-        let paths = get_ignored_paths(input);
-        assert_eq!(paths, vec!["some::module"]);
+        if name.is_empty() && version.is_empty() {
+            return None;
+        }
 
-        let input = Some("some::module,and_another".to_owned());
-        let paths = get_ignored_paths(input);
-        assert_eq!(paths, vec!["some::module", "and_another"]);
+        Some(Service { name, version })
+    }
+}
 
-        let input = Some("some::module,and_another,plus::something_else,".to_owned());
-        let paths = get_ignored_paths(input);
-        assert_eq!(
-            paths,
-            vec!["some::module", "and_another", "plus::something_else"]
-        );
+fn format_record(record: &Record<'_>, service: Option<&Service>, report_location: bool) -> Value {
+    let message = match record.level() {
+        Level::Error => format!(
+            "{} \n at {}:{}",
+            record.args(),
+            record.file().unwrap_or("unknown_file"),
+            record.line().unwrap_or(0)
+        ),
+        _ => format!("{}", record.args()),
+    };
 
-        let input = Some("some::module,and_another,with::trailing::comma,".to_owned());
-        let paths = get_ignored_paths(input);
-        assert_eq!(
-            paths,
-            vec!["some::module", "and_another", "with::trailing::comma"]
+    let mut value = json!({
+        "eventTime": Utc::now().to_rfc3339(),
+        "message": message,
+        "severity": map_level(&record.level()).to_string(),
+    });
+    if let Some(service) = service {
+        value.as_object_mut().unwrap().insert(
+            "serviceContext".to_string(),
+            json!({
+                "service": service.name,
+                "version": service.version
+            }),
         );
     }
+    if report_location {
+        value.as_object_mut().unwrap().insert(
+            "reportLocation".to_string(),
+            json!({
+                "filePath": record.file(),
+                "modulePath": record.module_path(),
+                "lineNumber": record.line(),
+            }),
+        );
+    }
+    value
 }
