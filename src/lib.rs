@@ -1,14 +1,11 @@
 // #![doc(include = "../README.md")]
 
-#[macro_use]
-extern crate serde_json;
+use std::{env, fmt};
 
 use chrono::Utc;
 use env_logger::Builder;
 use log::{Level, Record, SetLoggerError};
-use serde_json::Value;
-use std::env;
-use std::fmt;
+use serde_json::{json, Value};
 
 /// Log levels available in Stackdriver
 #[derive(Debug)]
@@ -88,7 +85,7 @@ pub fn formatted_builder(service: Option<Service>, report_location: bool) -> Bui
     builder
 }
 
-fn map_level(input: &Level) -> StackdriverLogLevel {
+fn map_level(input: Level) -> StackdriverLogLevel {
     match input {
         Level::Error => StackdriverLogLevel::Error,
         Level::Warn => StackdriverLogLevel::Warning,
@@ -106,12 +103,12 @@ pub struct Service {
 impl Service {
     pub fn from_env() -> Option<Service> {
         let name = env::var("SERVICE_NAME")
-            .or(env::var("CARGO_PKG_NAME"))
-            .unwrap_or("".to_owned());
+            .or_else(|_| env::var("CARGO_PKG_NAME"))
+            .unwrap_or_else(|_| "".to_owned());
 
         let version = env::var("SERVICE_VERSION")
-            .or(env::var("CARGO_PKG_VERSION"))
-            .unwrap_or("".to_owned());
+            .or_else(|_| env::var("CARGO_PKG_VERSION"))
+            .unwrap_or_else(|_| "".to_owned());
 
         if name.is_empty() && version.is_empty() {
             return None;
@@ -135,7 +132,7 @@ fn format_record(record: &Record<'_>, service: Option<&Service>, report_location
     let mut value = json!({
         "eventTime": Utc::now().to_rfc3339(),
         "message": message,
-        "severity": map_level(&record.level()).to_string(),
+        "severity": map_level(record.level()).to_string(),
     });
     if let Some(service) = service {
         value.as_object_mut().unwrap().insert(
