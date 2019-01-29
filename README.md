@@ -10,7 +10,7 @@ use stackdriver_logger;
 use log::{error, info, trace, debug, warn};
 
 fn main() {
-    stackdriver_logger::init();
+    stackdriver_logger::init_with_cargo!();
 
     trace!("trace log");
     debug!("debug log");
@@ -19,13 +19,15 @@ fn main() {
     error!("error log");
 }
 ```
+Note that the `init_with_cargo!` macro will include your `Cargo.toml` in the resulting binary.
+If you don't want that, check out the docs, a few more initializers are available.
 
 ## Behavior
-You need to provide two environment variables, `SERVICE_NAME` and `SERVICE_VERSION`, everything else
-is handled by the library. \
+When using the above macro, you don't have anything else to do.
+For other initializers, you may need to provide two environment variables : `SERVICE_NAME` and `SERVICE_VERSION`.
 We're using Cargo's `CARGO_PKG_NAME` and `CARGO_PKG_VERSION` as a fallback, but these are only available
 if you run your application via Cargo. \
-`serviceName` and `serviceVersion` are left blank if none of the above are found.
+Check out the docs to see which initializers require environment variables.
 
 ## Enabling logging
 This library accepts a `RUST_LOG` env variable, it works exactly like in [`env_logger`](https://github.com/sebasmagri/env_logger). \
