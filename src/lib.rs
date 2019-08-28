@@ -81,14 +81,17 @@ pub fn init_with(service: Option<Service>, report_location: bool) {
     try_init(service, report_location).expect("Could not initialize stackdriver_logger");
 }
 
-pub(crate) fn try_init(service: Option<Service>, report_location: bool) -> Result<(), SetLoggerError> {
+pub(crate) fn try_init(
+    service: Option<Service>,
+    report_location: bool,
+) -> Result<(), SetLoggerError> {
     if cfg!(debug_assertions) {
         pretty_env_logger::try_init()
     } else {
         let mut builder = formatted_builder(service, report_location);
 
         if let Ok(s) = ::std::env::var("RUST_LOG") {
-            builder.parse(&s);
+            builder.parse_filters(&s);
         }
 
         builder.try_init()
@@ -151,7 +154,6 @@ fn map_level(input: Level) -> StackdriverLogLevel {
         Level::Debug | Level::Trace => StackdriverLogLevel::Debug,
     }
 }
-
 
 fn format_record(record: &Record<'_>, service: Option<&Service>, report_location: bool) -> Value {
     let message = match record.level() {
