@@ -12,18 +12,8 @@ use serde_json::{json, Value};
 #[macro_use]
 pub mod macros;
 
-/// Log levels available in Stackdriver
-#[derive(Debug)]
-enum StackdriverLogLevel {
-    Debug,
-    Info,
-    Warning,
-    Error,
-    // Notice,
-    // Critical,
-    // Alert,
-    // Emergency,
-}
+// Wrap Level from the log crate so we can implement standard traits for it
+struct LogLevel(Level);
 
 /// Parameters expected by the logger, used for manual initialization.
 #[derive(Clone)]
@@ -33,6 +23,24 @@ pub struct Service {
 
     /// Version of your service as it will be reported by Stackdriver
     pub version: String,
+}
+
+impl Service {
+    pub fn from_env() -> Option<Service> {
+        let name = env::var("SERVICE_NAME")
+            .or_else(|_| env::var("CARGO_PKG_NAME"))
+            .unwrap_or_else(|_| String::new());
+
+        let version = env::var("SERVICE_VERSION")
+            .or_else(|_| env::var("CARGO_PKG_VERSION"))
+            .unwrap_or_else(|_| String::new());
+
+        if name.is_empty() && version.is_empty() {
+            return None;
+        }
+
+        Some(Service { name, version })
+    }
 }
 
 /// Basic initializer, expects SERVICE_NAME and SERVICE_VERSION env variables
@@ -81,6 +89,7 @@ pub fn init_with(service: Option<Service>, report_location: bool) {
     try_init(service, report_location).expect("Could not initialize stackdriver_logger");
 }
 
+// Initialize the logger, defaults to pretty_env_logger in debug mode
 pub(crate) fn try_init(
     service: Option<Service>,
     report_location: bool,
@@ -88,7 +97,15 @@ pub(crate) fn try_init(
     if cfg!(debug_assertions) {
         pretty_env_logger::try_init()
     } else {
-        let mut builder = formatted_builder(service, report_location);
+        use std::io::Write;
+        let mut builder = Builder::new();
+        builder.format(move |f, record| {
+            writeln!(
+                f,
+                "{}",
+                format_record(record, service.as_ref(), report_location)
+            )
+        });
 
         if let Ok(s) = ::std::env::var("RUST_LOG") {
             builder.parse_filters(&s);
@@ -98,98 +115,117 @@ pub(crate) fn try_init(
     }
 }
 
-impl fmt::Display for StackdriverLogLevel {
+// Format log level for Stackdriver
+impl fmt::Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StackdriverLogLevel::Debug => write!(f, "DEBUG"),
-            StackdriverLogLevel::Info => write!(f, "INFO"),
-            StackdriverLogLevel::Warning => write!(f, "WARNING"),
-            StackdriverLogLevel::Error => write!(f, "ERROR"),
-            // StackdriverLogLevel::Notice => write!(f, "NOTICE"),
-            // StackdriverLogLevel::Critical => write!(f, "CRITICAL"),
-            // StackdriverLogLevel::Alert => write!(f, "ALERT"),
-            // StackdriverLogLevel::Emergency => write!(f, "EMERGENCY"),
+            LogLevel(l) if l == &Level::Error => write!(f, "ERROR"),
+            LogLevel(l) if l == &Level::Warn => write!(f, "WARNING"),
+            LogLevel(l) if l == &Level::Info => write!(f, "INFO"),
+
+            // Debug and Trace are caught here. Stackdriver doesn't have Trace, we map it to Debug instead
+            LogLevel(_) => write!(f, "DEBUG"),
         }
     }
 }
 
-impl Service {
-    pub fn from_env() -> Option<Service> {
-        let name = env::var("SERVICE_NAME")
-            .or_else(|_| env::var("CARGO_PKG_NAME"))
-            .unwrap_or_else(|_| "".to_owned());
-
-        let version = env::var("SERVICE_VERSION")
-            .or_else(|_| env::var("CARGO_PKG_VERSION"))
-            .unwrap_or_else(|_| "".to_owned());
-
-        if name.is_empty() && version.is_empty() {
-            return None;
-        }
-
-        Some(Service { name, version })
-    }
-}
-
-fn formatted_builder(service: Option<Service>, report_location: bool) -> Builder {
-    use std::io::Write;
-    let mut builder = Builder::new();
-
-    builder.format(move |f, record| {
-        writeln!(
-            f,
-            "{}",
-            format_record(record, service.as_ref(), report_location)
-        )
-    });
-
-    builder
-}
-
-fn map_level(input: Level) -> StackdriverLogLevel {
-    match input {
-        Level::Error => StackdriverLogLevel::Error,
-        Level::Warn => StackdriverLogLevel::Warning,
-        Level::Info => StackdriverLogLevel::Info,
-        Level::Debug | Level::Trace => StackdriverLogLevel::Debug,
-    }
-}
-
+// Message structure is documented here: https://cloud.google.com/error-reporting/docs/formatting-error-messages
 fn format_record(record: &Record<'_>, service: Option<&Service>, report_location: bool) -> Value {
-    let message = match record.level() {
-        Level::Error => format!(
-            "{} \n at {}:{}",
-            record.args(),
-            record.file().unwrap_or("unknown_file"),
-            record.line().unwrap_or(0)
-        ),
-        _ => format!("{}", record.args()),
-    };
-
-    let mut value = json!({
+    json!({
         "eventTime": Utc::now().to_rfc3339(),
-        "message": message,
-        "severity": map_level(record.level()).to_string(),
-    });
+        "severity": LogLevel(record.level()).to_string(),
 
-    if let Some(service) = service {
-        value.as_object_mut().unwrap().insert(
-            "serviceContext".to_string(),
-            json!({
-                "service": service.name,
-                "version": service.version
-            }),
-        );
-    }
-    if report_location {
-        value.as_object_mut().unwrap().insert(
-            "reportLocation".to_string(),
+        // Error messages also have a pseudo stack trace
+        "message": match record.level() {
+            Level::Error => format!(
+                "{} \n at {}:{}",
+                record.args(),
+                record.file().unwrap_or("unknown_file"),
+                record.line().unwrap_or(0)
+            ),
+            _ => format!("{}", record.args()),
+        },
+
+        // Service context may or may not be defined
+        "serviceContext": service.map(|s| json!({
+                "service": s.name,
+                "version": s.version
+            }))
+            .unwrap_or_else(|| json!({
+                "service": "unknown_service"
+            })),
+
+        // Report location may or may not be available
+        "reportLocation": if report_location {
             json!({
                 "filePath": record.file(),
                 "modulePath": record.module_path(),
                 "lineNumber": record.line(),
-            }),
-        );
+            })
+        } else {
+            Value::Null
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn info_formatter() {
+        let svc = Service {
+            name: String::from("test"),
+            version: String::from("0.0.0"),
+        };
+
+        let record = Record::builder()
+            .args(format_args!("Info!"))
+            .level(Level::Info)
+            .target("test_app")
+            .file(Some("my_file.rs"))
+            .line(Some(1337))
+            .module_path(Some("my_module"))
+            .build();
+
+        let mut output = format_record(&record, Some(&svc), false);
+        let expected = include_str!("../test_snapshots/info_svc.json");
+        let expected: Value = serde_json::from_str(expected).unwrap();
+
+        // Make sure eventTime is set then overwrite generated timestamp with a known value
+        assert!(output["eventTime"].as_str().is_some());
+        *output.get_mut("eventTime").unwrap() = json!("2019-09-28T04:00:00.000000000+00:00");
+        assert_eq!(output, expected);
     }
-    value
+
+    #[test]
+    fn error_formatter() {
+        let svc = Service {
+            name: String::from("test"),
+            version: String::from("0.0.0"),
+        };
+
+        let record = Record::builder()
+            .args(format_args!("Error!"))
+            .level(Level::Error)
+            .target("test_app")
+            .file(Some("my_file.rs"))
+            .line(Some(1337))
+            .module_path(Some("my_module"))
+            .build();
+
+        let mut output = format_record(&record, None, false);
+        let expected = include_str!("../test_snapshots/no_scv_no_loc.json");
+        let expected: Value = serde_json::from_str(expected).unwrap();
+        assert!(output["eventTime"].as_str().is_some());
+        *output.get_mut("eventTime").unwrap() = json!("2019-09-28T04:00:00.000000000+00:00");
+        assert_eq!(output, expected);
+
+        let mut output = format_record(&record, Some(&svc), true);
+        let expected = include_str!("../test_snapshots/svc_and_loc.json");
+        let expected: Value = serde_json::from_str(expected).unwrap();
+        assert!(output["eventTime"].as_str().is_some());
+        *output.get_mut("eventTime").unwrap() = json!("2019-09-28T04:00:00.000000000+00:00");
+        assert_eq!(output, expected);
+    }
 }
