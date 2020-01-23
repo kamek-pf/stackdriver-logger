@@ -1,4 +1,5 @@
 // #![doc(include = "../README.md")]
+#![forbid(unsafe_code)]
 
 use std::{env, fmt};
 
@@ -49,10 +50,8 @@ impl Service {
 /// ```rust
 /// use log::info;
 ///
-/// fn main() {
-///     stackdriver_logger::init();
-///     info!("Make sur you don't forget the env variables !");
-/// }
+/// stackdriver_logger::init();
+/// info!("Make sur you don't forget the env variables !");
 /// ```
 pub fn init() {
     try_init(None, true).expect("Could not initialize stackdriver_logger");
@@ -65,25 +64,21 @@ pub fn init() {
 /// use log::info;
 /// use stackdriver_logger::Service;
 ///
-/// fn main() {
-///     let params = Service {
-///         name: "My Service".to_owned(),
-///         version: "2.3.1".to_owned(),
-///     };
+/// let params = Service {
+///     name: "My Service".to_owned(),
+///     version: "2.3.1".to_owned(),
+/// };
 ///
-///     stackdriver_logger::init_with(Some(params), true);
-///     info!("We're all set here !");
-/// }
+/// stackdriver_logger::init_with(Some(params), true);
+/// info!("We're all set here !");
 /// ```
 /// You can also pass a `None` instead of `Some(Service{ ... })` and define the `SERVICE_NAME`
 /// and `SERVICE_VERSION` env variables :
 /// ```rust
 /// use log::info;
 ///
-/// fn main() {
-///     stackdriver_logger::init_with(None, false);
-///     info!("Make sur you don't forget the env variables !");
-/// }
+/// stackdriver_logger::init_with(None, false);
+/// info!("Make sur you don't forget the env variables !");
 /// ```
 pub fn init_with(service: Option<Service>, report_location: bool) {
     try_init(service, report_location).expect("Could not initialize stackdriver_logger");
