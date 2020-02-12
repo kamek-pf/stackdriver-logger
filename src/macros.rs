@@ -1,5 +1,5 @@
-use toml::Value;
 use crate::{try_init, Service};
+use toml::Value;
 
 /// Initialize the logger using your project's TOML file.
 ///
@@ -24,7 +24,7 @@ use crate::{try_init, Service};
 ///     info!("Path was specified !");
 /// }
 /// ```
-/// Note that the `include_with_cargo!` macro will include your `Cargo.toml` in the resulting binary.
+/// Note that the `init_with_cargo!` macro will include your `Cargo.toml` in the resulting binary.
 /// If you don't want that, take a look at the other initializers.
 #[macro_export]
 macro_rules! init_with_cargo {
@@ -46,7 +46,7 @@ pub fn read_cargo(input: &str) {
         .and_then(|toml: Value| -> Option<()> {
             let service = Service {
                 name: read_package_key(&toml, "name")?,
-                version: read_package_key(&toml, "version")?
+                version: read_package_key(&toml, "version")?,
             };
 
             try_init(Some(service), true).expect("Could not initialize stackdriver_logger");
@@ -55,7 +55,8 @@ pub fn read_cargo(input: &str) {
 }
 
 fn read_package_key(toml: &Value, key: &str) -> Option<String> {
-    let key = toml.get("package")?
+    let key = toml
+        .get("package")?
         .as_table()?
         .get(key)?
         .as_str()?

@@ -1,6 +1,6 @@
 [package]
 name = "stackdriver_logger"
-version = "0.6.1"
+version = "0.7.0"
 description = "A logger for Google's Stackdriver with a cli-friendly fallback for local development"
 authors = ["Kamek <b.kamek@gmail.com>"]
 license = "MIT/Apache-2.0"
@@ -11,13 +11,22 @@ repository = "https://github.com/kamek-pf/stackdriver-logger/"
 edition = "2018"
 
 [features]
-default = ["cargo"]
+default = ["cargo", "termcolor", "atty", "humantime", "regex", "pretty_env_logger"]
+prod = ["cargo"]
+
+# Used by the init macro
 cargo = ["toml"]
 
+# Toggle env logger features
+termcolor = ["env_logger/termcolor"]
+atty = ["env_logger/atty"]
+humantime = ["env_logger/humantime"]
+regex = ["env_logger/regex"]
+
 [dependencies]
-chrono = "0.4"
-serde_json = "1.0"
-env_logger = "0.7"
-log = "0.4"
-pretty_env_logger = "0.3"
-toml = { version = "0.5", optional = true }
+env_logger = { version = "0.7.1", default-features = false }
+pretty_env_logger = { version = "0.4.0", optional = true }
+chrono = "0.4.10"
+serde_json = "1.0.47"
+log = "0.4.8"
+toml = { version = "0.5.6", optional = true }

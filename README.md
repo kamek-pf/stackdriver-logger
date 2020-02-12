@@ -1,7 +1,7 @@
 # Stackdriver logger
 
 A logger for Google's Stackdriver.\
-In debug mode, we fall back back to [pretty-env-logger](https://github.com/seanmonstar/pretty-env-logger).\
+By default, in debug mode, we fall back back to [`pretty_env_logger`](https://github.com/seanmonstar/pretty-env-logger). \
 In release mode, we output JSON formatted logs compatible with Stackdriver.
 
 ## Usage
@@ -38,7 +38,15 @@ To enable all logs for your application :
 RUST_LOG=your_application cargo run
 ```
 
-For more details, take a look at the [env_logger docs](https://docs.rs/env_logger/0.6.0/env_logger/#enabling-logging).
+For more details, take a look at the [`env_logger` docs](https://docs.rs/env_logger/0.7.0/env_logger/#enabling-logging).
+
+## Feature flags
+By default, this crate enables all `env_logger` defaults features and always pulls `pretty_env_logger`. \
+These crates have some heavy dependencies like `regex`. \
+If you want smaller builds in production, and don't use fancy `env_logger` features, you can disable default features for `stackdriver_logger` like so :
+```
+stackdriver_logger = { version = "*", default-features = false, features = ["prod"] }
+```
 
 ## License
 Licensed under either of

@@ -3,9 +3,9 @@
 
 use std::{env, fmt};
 
-use chrono::Utc;
-use env_logger::Builder;
-use log::{Level, Record, SetLoggerError};
+use log::{Level, SetLoggerError};
+
+#[cfg(any(test, not(all(feature = "pretty_env_logger", debug_assertions))))]
 use serde_json::{json, Value};
 
 #[cfg(feature = "cargo")]
@@ -85,15 +85,21 @@ pub fn init_with(service: Option<Service>, report_location: bool) {
 }
 
 // Initialize the logger, defaults to pretty_env_logger in debug mode
+// Allow unused variables for convenience when toggling feature flags
+#[allow(unused_variables)]
 pub(crate) fn try_init(
     service: Option<Service>,
     report_location: bool,
 ) -> Result<(), SetLoggerError> {
-    if cfg!(debug_assertions) {
+    #[cfg(all(feature = "pretty_env_logger", debug_assertions))]
+    {
         pretty_env_logger::try_init()
-    } else {
+    }
+
+    #[cfg(not(all(feature = "pretty_env_logger", debug_assertions)))]
+    {
         use std::io::Write;
-        let mut builder = Builder::new();
+        let mut builder = env_logger::Builder::new();
         builder.format(move |f, record| {
             writeln!(
                 f,
@@ -125,9 +131,14 @@ impl fmt::Display for LogLevel {
 }
 
 // Message structure is documented here: https://cloud.google.com/error-reporting/docs/formatting-error-messages
-fn format_record(record: &Record<'_>, service: Option<&Service>, report_location: bool) -> Value {
+#[cfg(any(test, not(all(feature = "pretty_env_logger", debug_assertions))))]
+fn format_record(
+    record: &log::Record<'_>,
+    service: Option<&Service>,
+    report_location: bool,
+) -> Value {
     json!({
-        "eventTime": Utc::now().to_rfc3339(),
+        "eventTime": chrono::Utc::now().to_rfc3339(),
         "severity": LogLevel(record.level()).to_string(),
 
         // Error messages also have a pseudo stack trace
@@ -174,7 +185,7 @@ mod tests {
             version: String::from("0.0.0"),
         };
 
-        let record = Record::builder()
+        let record = log::Record::builder()
             .args(format_args!("Info!"))
             .level(Level::Info)
             .target("test_app")
@@ -200,7 +211,7 @@ mod tests {
             version: String::from("0.0.0"),
         };
 
-        let record = Record::builder()
+        let record = log::Record::builder()
             .args(format_args!("Error!"))
             .level(Level::Error)
             .target("test_app")
