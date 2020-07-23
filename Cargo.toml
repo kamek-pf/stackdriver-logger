@@ -23,6 +23,9 @@ atty = ["env_logger/atty"]
 humantime = ["env_logger/humantime"]
 regex = ["env_logger/regex"]
 
+# Toggle log features
+customfields = ["log/kv_unstable"]
+
 [dependencies]
 env_logger = { version = "0.7.1", default-features = false }
 pretty_env_logger = { version = "0.4.0", optional = true }
