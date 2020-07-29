@@ -119,20 +119,14 @@ pub(crate) fn try_init(
         {
             use std::io::Write;
             let mut builder = env_logger::Builder::new();
-            builder.format(move |f, record| {
-                writeln!(
-                    f,
-                    "{}",
-                    format_record_pretty(record)
-                )
-            });
+            builder.format(move |f, record| writeln!(f, "{}", format_record_pretty(record)));
         }
 
         pretty_env_logger::try_init()
     }
 
     #[cfg(not(all(feature = "pretty_env_logger", debug_assertions)))]
-    { 
+    {
         use std::io::Write;
         let mut builder = env_logger::Builder::new();
         builder.format(move |f, record| {
@@ -232,10 +226,12 @@ fn format_record(
     }
 }
 
-#[cfg(all(feature = "pretty_env_logger", feature = "customfields", debug_assertions))]
-fn format_record_pretty(
-    record: &log::Record<'_>
-) -> String {    
+#[cfg(all(
+    feature = "pretty_env_logger",
+    feature = "customfields",
+    debug_assertions
+))]
+fn format_record_pretty(record: &log::Record<'_>) -> String {
     let mut message = format!("{}", record.args());
     let mut custom_fields = CustomFields::new();
     let mut kv_message_parts = vec![];
