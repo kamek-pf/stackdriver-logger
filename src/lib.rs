@@ -13,8 +13,30 @@ use serde_json::{json, Value};
 #[macro_use]
 pub mod macros;
 
+#[cfg(feature = "customfields")]
+use log::kv;
+
+#[cfg(feature = "customfields")]
+use std::collections::HashMap;
+
 // Wrap Level from the log crate so we can implement standard traits for it
 struct LogLevel(Level);
+
+// Wrap a Hashmap so we can implement log::kv traits for structured logging of custom fields
+// See https://cloud.google.com/logging/docs/view/overview#custom-fields
+#[cfg(feature = "customfields")]
+struct CustomFields<'kvs>(HashMap<kv::Key<'kvs>, kv::Value<'kvs>>);
+
+#[cfg(feature = "customfields")]
+impl<'kvs> CustomFields<'kvs> {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn inner(&self) -> &HashMap<kv::Key, kv::Value> {
+        &self.0
+    }
+}
 
 /// Parameters expected by the logger, used for manual initialization.
 #[derive(Clone)]
@@ -93,6 +115,13 @@ pub(crate) fn try_init(
 ) -> Result<(), SetLoggerError> {
     #[cfg(all(feature = "pretty_env_logger", debug_assertions))]
     {
+        #[cfg(feature = "customfields")]
+        {
+            use std::io::Write;
+            let mut builder = env_logger::Builder::new();
+            builder.format(move |f, record| writeln!(f, "{}", format_record_pretty(record)));
+        }
+
         pretty_env_logger::try_init()
     }
 
@@ -130,6 +159,14 @@ impl fmt::Display for LogLevel {
     }
 }
 
+#[cfg(feature = "customfields")]
+impl<'kvs> kv::Visitor<'kvs> for CustomFields<'kvs> {
+    fn visit_pair(&mut self, key: kv::Key<'kvs>, value: kv::Value<'kvs>) -> Result<(), kv::Error> {
+        self.0.insert(key, value);
+        Ok(())
+    }
+}
+
 // Message structure is documented here: https://cloud.google.com/error-reporting/docs/formatting-error-messages
 #[cfg(any(test, not(all(feature = "pretty_env_logger", debug_assertions))))]
 fn format_record(
@@ -137,7 +174,7 @@ fn format_record(
     service: Option<&Service>,
     report_location: bool,
 ) -> Value {
-    json!({
+    let json_payload = json!({
         "eventTime": chrono::Utc::now().to_rfc3339(),
         "severity": LogLevel(record.level()).to_string(),
 
@@ -171,7 +208,45 @@ fn format_record(
         } else {
             Value::Null
         }
-    })
+    });
+
+    #[cfg(not(feature = "customfields"))]
+    return json_payload;
+
+    #[cfg(feature = "customfields")]
+    {
+        let mut json_payload = json_payload;
+        let mut custom_fields = CustomFields::new();
+        if record.key_values().visit(&mut custom_fields).is_ok() {
+            for (key, val) in custom_fields.inner().iter() {
+                json_payload[key.as_str()] = Value::String(val.to_string());
+            }
+        }
+        return json_payload;
+    }
+}
+
+#[cfg(all(
+    feature = "pretty_env_logger",
+    feature = "customfields",
+    debug_assertions
+))]
+fn format_record_pretty(record: &log::Record<'_>) -> String {
+    let mut message = format!("{}", record.args());
+    let mut custom_fields = CustomFields::new();
+    let mut kv_message_parts = vec![];
+    if record.key_values().visit(&mut custom_fields).is_ok() {
+        for (key, val) in custom_fields.inner().iter() {
+            kv_message_parts.push(format!("{}={}", key, val));
+        }
+    }
+
+    if !kv_message_parts.is_empty() {
+        kv_message_parts.sort();
+        message = format!("{} {}", message, kv_message_parts.join(", "))
+    }
+
+    message
 }
 
 #[cfg(test)]
@@ -232,6 +307,61 @@ mod tests {
         let expected: Value = serde_json::from_str(expected).unwrap();
         assert!(output["eventTime"].as_str().is_some());
         *output.get_mut("eventTime").unwrap() = json!("2019-09-28T04:00:00.000000000+00:00");
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    #[cfg(feature = "customfields")]
+    fn custom_fields_formatter() {
+        let svc = Service {
+            name: String::from("test"),
+            version: String::from("0.0.0"),
+        };
+
+        let mut map = std::collections::HashMap::new();
+        map.insert("a", "a value");
+        map.insert("b", "b value");
+
+        let record = log::Record::builder()
+            .args(format_args!("Info!"))
+            .level(Level::Info)
+            .target("test_app")
+            .file(Some("my_file.rs"))
+            .line(Some(1337))
+            .module_path(Some("my_module"))
+            .key_values(&mut map)
+            .build();
+
+        let mut output = format_record(&record, Some(&svc), false);
+        let expected = include_str!("../test_snapshots/custom_fields.json");
+        let expected: Value = serde_json::from_str(expected).unwrap();
+
+        // Make sure eventTime is set then overwrite generated timestamp with a known value
+        assert!(output["eventTime"].as_str().is_some());
+        *output.get_mut("eventTime").unwrap() = json!("2019-09-28T04:00:00.000000000+00:00");
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    #[cfg(feature = "customfields")]
+    fn custom_fields_formatter_pretty() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("a", "a value");
+        map.insert("b", "b value");
+
+        let record = log::Record::builder()
+            .args(format_args!("Info!"))
+            .level(Level::Info)
+            .target("test_app")
+            .file(Some("my_file.rs"))
+            .line(Some(1337))
+            .module_path(Some("my_module"))
+            .key_values(&mut map)
+            .build();
+
+        let output = format_record_pretty(&record);
+        let expected = "Info! a=a value, b=b value";
+
         assert_eq!(output, expected);
     }
 }
