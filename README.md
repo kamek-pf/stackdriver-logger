@@ -1,13 +1,12 @@
 # Stackdriver logger
 
 A logger for Google's Stackdriver.\
-By default, in debug mode, we fall back back to [`pretty_env_logger`](https://github.com/seanmonstar/pretty-env-logger). \
+By default, in debug mode, we fall back to [`pretty_env_logger`](https://github.com/seanmonstar/pretty-env-logger). \
 In release mode, we output JSON formatted logs compatible with Stackdriver.
 
 ## Usage
 
 ```rust
-use stackdriver_logger;
 use log::{error, info, trace, debug, warn};
 
 fn main() {
@@ -38,7 +37,7 @@ This library accepts a `RUST_LOG` env variable, it works exactly like in [`env_l
 By default, everything is disabled except for `error!`.
 To enable all logs for your application :
 
-```
+```sh
 RUST_LOG=your_application cargo run
 ```
 
@@ -50,7 +49,7 @@ By default, this crate enables all `env_logger` defaults features and always pul
 These crates have some heavy dependencies like `regex`. \
 If you want smaller builds in production, and don't use fancy `env_logger` features, you can disable default features for `stackdriver_logger` like so :
 
-```
+```toml
 stackdriver_logger = { version = "*", default-features = false, features = ["prod"] }
 ```
 
