@@ -11,7 +11,14 @@ repository = "https://github.com/kamek-pf/stackdriver-logger/"
 edition = "2018"
 
 [features]
-default = ["cargo", "termcolor", "atty", "humantime", "regex", "pretty_env_logger"]
+default = [
+    "cargo",
+    "termcolor",
+    "atty",
+    "humantime",
+    "regex",
+    "pretty_env_logger",
+]
 prod = ["cargo"]
 
 # Used by the init macro
