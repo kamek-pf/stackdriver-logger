@@ -10,19 +10,15 @@ use toml::Value;
 /// ```rust
 /// use log::info;
 ///
-/// fn main() {
-///     stackdriver_logger::init_with_cargo!();
-///     info!("Default path used for Cargo.toml : ../Cargo.toml");
-/// }
+/// stackdriver_logger::init_with_cargo!();
+/// info!("Default path used for Cargo.toml : ../Cargo.toml");
 /// ```
 /// You can also specify the path if you need to :
 /// ```rust
 /// use log::info;
 ///
-/// fn main() {
-///     stackdriver_logger::init_with_cargo!("../Cargo.toml");
-///     info!("Path was specified !");
-/// }
+/// stackdriver_logger::init_with_cargo!("../Cargo.toml");
+/// info!("Path was specified !");
 /// ```
 /// Note that the `init_with_cargo!` macro will include your `Cargo.toml` in the resulting binary.
 /// If you don't want that, take a look at the other initializers.

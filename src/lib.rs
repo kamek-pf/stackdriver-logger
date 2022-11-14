@@ -1,4 +1,4 @@
-// #![doc(include = "../README.md")]
+#![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
 use std::{env, fmt};
@@ -148,14 +148,14 @@ pub(crate) fn try_init(
 // Format log level for Stackdriver
 impl fmt::Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LogLevel(l) if l == &Level::Error => write!(f, "ERROR"),
-            LogLevel(l) if l == &Level::Warn => write!(f, "WARNING"),
-            LogLevel(l) if l == &Level::Info => write!(f, "INFO"),
+        f.write_str(match self {
+            LogLevel(Level::Error) => "ERROR",
+            LogLevel(Level::Warn) => "WARNING",
+            LogLevel(Level::Info) => "INFO",
 
             // Debug and Trace are caught here. Stackdriver doesn't have Trace, we map it to Debug instead
-            LogLevel(_) => write!(f, "DEBUG"),
-        }
+            LogLevel(_) => "DEBUG",
+        })
     }
 }
 
