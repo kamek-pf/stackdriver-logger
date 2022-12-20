@@ -1,6 +1,6 @@
 [package]
 name = "stackdriver_logger"
-version = "0.8.1"
+version = "0.8.2"
 description = "A logger for Google's Stackdriver with a cli-friendly fallback for local development"
 authors = ["Kamek <b.kamek@gmail.com>"]
 license = "MIT/Apache-2.0"
@@ -36,7 +36,7 @@ customfields = ["log/kv_unstable"]
 [dependencies]
 env_logger = { version = "0.9.3", default-features = false }
 pretty_env_logger = { version = "0.4.0", optional = true }
-chrono = "0.4.23"
+chrono = { version = "0.4.23", default-features = false, features = ["clock"] }
 serde_json = "1.0.87"
 log = "0.4.17"
 toml = { version = "0.5.9", optional = true }
